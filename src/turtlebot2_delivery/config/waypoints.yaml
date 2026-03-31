@@ -1,0 +1,31 @@
+# waypoints.yaml
+# ===============
+# Named navigation goals for the delivery mission.
+#
+# HOW TO FILL IN:
+#   1. Run navigation.launch and open RViz.
+#   2. Use "2D Nav Goal" to drive the robot to each location.
+#   3. Read the robot pose from /amcl_pose or the TF tree:
+#        rostopic echo /amcl_pose
+#   4. Copy the x, y values (position) and z, w values (orientation).
+#
+# The orientation is a quaternion. For flat hospital floors you only need
+# z and w (yaw). Use an online Euler→Quaternion converter if needed.
+#
+# Example: facing forward (0°) → z=0.0, w=1.0
+#          facing left   (90°) → z=0.707, w=0.707
+#          facing back  (180°) → z=1.0,  w=0.0
+
+waypoints:
+
+  stock_room:
+    position:    {x: -0.01597420435329363, y: -0.2825289619406554}
+    orientation: {x: 0.0, y: 0.0, z: -0.49377488080498966, w: 0.8695897694235014}
+
+  base:
+    position:    {x: 1.2183549335857518, y: 0.35423697304596924}
+    orientation: {x: 0.0, y: 0.0, z: 0.8949453186653039, w: 0.44617583596498983}
+
+  ward:
+    position:    {x: 0.6805689332888563, y: -1.3225116050201187}
+    orientation: {x: 0.0, y: 0.0, z: -0.4642643811212389, w: 0.8856966661459853}

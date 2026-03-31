@@ -1,0 +1,8 @@
+prefix=/home/student/PROJECT_ROS/install
+
+Name: turtlebot2_delivery
+Description: Description of turtlebot2_delivery
+Version: 0.1.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: 

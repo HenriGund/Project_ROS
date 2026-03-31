@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>turtlebot2_delivery</name>
+  <version>0.1.0</version>
+  <description>
+    Autonomous medication delivery system for TurtleBot2.
+    The robot performs SLAM, receives nurse delivery requests, navigates to
+    the stock room, waits for camera-confirmed box loading, then delivers to
+    the ward and returns to base.
+  </description>
+
+  <maintainer email="student@hospital.local">student</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <!-- Core ROS -->
+  <depend>rospy</depend>
+  <depend>std_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>sensor_msgs</depend>
+  <depend>nav_msgs</depend>
+  <depend>actionlib</depend>
+  <depend>actionlib_msgs</depend>
+
+  <!-- Navigation stack -->
+  <depend>move_base_msgs</depend>
+  <depend>move_base</depend>
+  <depend>amcl</depend>
+  <depend>gmapping</depend>
+  <depend>map_server</depend>
+
+  <!-- Perception -->
+  <depend>cv_bridge</depend>
+  <depend>image_transport</depend>
+
+  <!-- TurtleBot2 -->
+  <depend>turtlebot_bringup</depend>
+  <depend>kobuki_msgs</depend>
+
+  <!-- Kinect driver (openni_launch, used by turtlebot_bringup/3dsensor.launch) -->
+  <!-- openni_launch and depthimage_to_laserscan come from turtlebot2_ws source build -->
+  <depend>openni_launch</depend>
+  <depend>depthimage_to_laserscan</depend>
+
+  <!-- Teleop -->
+  <depend>turtlebot_teleop</depend>
+
+  <exec_depend>python3-opencv</exec_depend>
+</package>

@@ -1,0 +1,147 @@
+<!--
+  slam_auto.launch
+  Autonomous SLAM using frontier-based exploration (explore_lite).
+
+  The robot explores the environment automatically:
+    1. gmapping builds the map incrementally.
+    2. explore_lite finds frontiers (known/unknown boundaries) and sends
+       navigation goals to move_base.
+    3. move_base drives the robot there while avoiding obstacles.
+
+  When the map looks complete, save it and stop this launch:
+    rosrun map_server map_saver -f $(rospack find turtlebot2_delivery)/maps/hospital
+
+  Prerequisites:
+    source ~/kobuki_ws/devel/setup.bash
+    source ~/turtlebot2_ws/devel/setup.bash
+    source ~/PROJECT_ROS/devel/setup.bash
+    export TURTLEBOT_BASE=kobuki
+    export TURTLEBOT_STACKS=hexagons
+    export TURTLEBOT_3D_SENSOR=kinect
+    export TURTLEBOT_SERIAL_PORT=/dev/kobuki
+-->
+<launch>
+
+  <!-- ── Kobuki base ──────────────────────────────────────────── -->
+  <include file="$(find turtlebot_bringup)/launch/minimal.launch"/>
+
+  <!-- ── Kinect via openni_launch + depthimage_to_laserscan ───── -->
+  <include file="$(find turtlebot_bringup)/launch/3dsensor.launch">
+    <arg name="3d_sensor"  value="kinect"/>
+    <arg name="publish_tf" value="false"/>
+  </include>
+
+  <!-- ── gmapping SLAM ────────────────────────────────────────── -->
+  <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="screen">
+    <param name="base_frame"          value="base_footprint"/>
+    <param name="odom_frame"          value="odom"/>
+    <param name="map_frame"           value="map"/>
+    <remap from="scan"                to="/scan"/>
+    <param name="maxUrange"           value="3.5"/>
+    <param name="maxRange"            value="4.0"/>
+    <param name="delta"               value="0.05"/>
+    <param name="particles"           value="200"/>
+    <param name="linearUpdate"        value="0.05"/>
+    <param name="angularUpdate"       value="0.05"/>
+    <param name="temporalUpdate"      value="1.0"/>
+    <param name="map_update_interval" value="1.0"/>
+    <param name="sigma"               value="0.05"/>
+    <param name="kernelSize"          value="1"/>
+    <param name="lstep"               value="0.05"/>
+    <param name="astep"               value="0.05"/>
+    <param name="iterations"          value="5"/>
+    <param name="lsigma"              value="0.075"/>
+    <param name="ogain"               value="3.0"/>
+    <param name="lskip"               value="0"/>
+    <param name="minimumScore"        value="10"/>
+  </node>
+
+  <!-- ── move_base (navigation for exploration) ───────────────── -->
+  <!--
+    Uses the live gmapping /map via static_layer so the global
+    costmap grows as the map is built.  No pre-existing map needed.
+  -->
+  <node pkg="move_base" type="move_base" name="move_base" output="screen">
+    <remap from="cmd_vel" to="/cmd_vel_mux/input/navi"/>
+
+    <!-- Costmap params inline (exploration mode – map grows live) -->
+    <rosparam>
+      robot_radius: 0.12
+
+      global_costmap:
+        global_frame:      map
+        robot_base_frame:  base_footprint
+        update_frequency:  2.0
+        publish_frequency: 1.0
+        static_map:        false
+        rolling_window:    false
+        transform_tolerance: 3.0
+        inflation_radius:    0.15
+        cost_scaling_factor: 2.0
+        plugins:
+          - {name: static_layer,    type: "costmap_2d::StaticLayer"}
+          - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+        static_layer:
+          map_topic:             /map
+          subscribe_to_updates:  true
+
+      local_costmap:
+        global_frame:      odom
+        robot_base_frame:  base_footprint
+        update_frequency:  5.0
+        publish_frequency: 2.0
+        static_map:        false
+        rolling_window:    true
+        transform_tolerance: 3.0
+        width:      3.0
+        height:     3.0
+        resolution: 0.05
+        inflation_radius:    0.15
+        cost_scaling_factor: 2.0
+        plugins:
+          - {name: obstacle_layer,  type: "costmap_2d::ObstacleLayer"}
+          - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+        obstacle_layer:
+          observation_sources: kinect_scan
+          kinect_scan:
+            sensor_frame:        camera_depth_frame
+            data_type:           LaserScan
+            topic:               /scan
+            marking:             true
+            clearing:            true
+            min_obstacle_height: 0.0
+            max_obstacle_height: 2.0
+            obstacle_range:      3.5
+            raytrace_range:      4.0
+    </rosparam>
+
+    <rosparam file="$(find turtlebot2_delivery)/config/move_base_params.yaml"
+              command="load"/>
+    <param name="base_global_planner" value="navfn/NavfnROS"/>
+    <param name="base_local_planner"  value="dwa_local_planner/DWAPlannerROS"/>
+  </node>
+
+  <!-- ── explore_lite (autonomous frontier exploration) ───────── -->
+  <!--
+    Finds frontiers between mapped and unknown space, sends goals to
+    move_base until no frontiers remain (map is complete).
+  -->
+  <node pkg="explore_lite" type="explore" name="explore" output="screen">
+    <param name="robot_base_frame"       value="base_footprint"/>
+    <param name="costmap_topic"          value="move_base/global_costmap/costmap"/>
+    <param name="costmap_updates_topic"  value="move_base/global_costmap/costmap_updates"/>
+    <param name="visualize"              value="true"/>
+    <param name="planner_frequency"      value="0.5"/>
+    <param name="progress_timeout"       value="20.0"/>
+    <param name="potential_scale"        value="3.0"/>
+    <param name="gain_scale"             value="1.0"/>
+    <param name="transform_tolerance"    value="1.0"/>
+    <param name="min_frontier_size"      value="0.1"/>
+  </node>
+
+  <!-- ── RViz ─────────────────────────────────────────────────── -->
+  <node pkg="rviz" type="rviz" name="rviz"
+        args="-d $(find turtlebot_rviz_launchers)/rviz/navigation.rviz"
+        required="false"/>
+
+</launch>

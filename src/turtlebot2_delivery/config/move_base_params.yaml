@@ -1,0 +1,53 @@
+# move_base_params.yaml
+# ======================
+# move_base global settings and DWA local planner tuning
+# for TurtleBot2 in a hospital corridor environment.
+
+# ── move_base ────────────────────────────────────────────────────────
+move_base:
+  controller_frequency: 5.0      # Hz – local planner loop rate
+  planner_frequency:    1.0      # Hz – replan frequently to avoid new obstacles
+  planner_patience:    15.0      # seconds to wait for a valid plan
+  controller_patience: 30.0      # seconds before declaring failure
+
+  # Disable recovery rotation – robot should not spin to clear costmap
+  clearing_rotation_allowed: false
+  recovery_behavior_enabled:  true
+
+# ── DWA Local Planner ────────────────────────────────────────────────
+DWAPlannerROS:
+
+  # Velocity limits (Kobuki max ~0.7 m/s linear, ~3.14 rad/s angular)
+  max_vel_x:   0.35     # reduce for indoor safety
+  min_vel_x:   0.0
+  max_vel_y:   0.0      # Kobuki is non-holonomic
+  min_vel_y:   0.0
+  max_vel_theta: 1.5
+  min_vel_theta: 0.0
+
+  # Acceleration limits
+  acc_lim_x:   0.5
+  acc_lim_y:   0.0
+  acc_lim_theta: 1.0
+
+  # Goal tolerances
+  xy_goal_tolerance:       0.30   # metres – stops micro-adjustments
+  yaw_goal_tolerance:      0.5    # radians (~28°) – good enough for delivery
+  latch_xy_goal_tolerance: true   # once position reached, stop re-checking xy
+
+  # Trajectory sampling
+  sim_time:         1.5         # seconds to simulate ahead
+  sim_granularity:  0.025
+  vx_samples:       10
+  vy_samples:       1
+  vtheta_samples:   20
+
+  # Scoring weights
+  path_distance_bias: 32.0
+  goal_distance_bias: 20.0
+  occdist_scale:       0.02
+  forward_point_distance: 0.325
+
+  # Obstacle avoidance
+  stop_time_buffer: 0.2
+  oscillation_reset_dist: 0.05

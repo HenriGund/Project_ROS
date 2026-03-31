@@ -1,0 +1,29 @@
+<!--
+  delivery.launch
+  Phase 3 – Full mission bringup.
+
+  Run AFTER navigation.launch is up and the robot is localised on the map.
+
+  Nodes started here:
+    - hmi_interface  : Single operator terminal – handles all three roles:
+                         1. Nurse types delivery request
+                         2. Stock operator presses ENTER (box loaded)
+                         3. Ward operator presses ENTER (box removed)
+    - alert_node     : Publishes text alerts → /mission_alert
+    - mission_manager: Central state machine
+
+  One xterm window will open for all operator interactions.
+-->
+<launch>
+  <!-- Single operator terminal (all three roles in sequence) -->
+  <node pkg="turtlebot2_delivery" type="hmi_interface.py"
+        name="hmi_interface" output="screen" launch-prefix="xterm -e"/>
+
+  <!-- Text alert node (no buzzer, no Arduino) -->
+  <node pkg="turtlebot2_delivery" type="alert_node.py"
+        name="alert_node" output="screen"/>
+
+  <!-- Mission state machine -->
+  <node pkg="turtlebot2_delivery" type="mission_manager.py"
+        name="mission_manager" output="screen"/>
+</launch>

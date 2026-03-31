@@ -1,0 +1,83 @@
+<!--
+  navigation.launch
+  Phase 2 – Autonomous navigation on the saved map using the Kinect.
+
+  Prerequisites:
+    - maps/hospital.pgm and maps/hospital.yaml must exist (run slam.launch first).
+    - config/waypoints.yaml must have base, stock_room, and ward poses filled in.
+    - Environment variables set in ~/.bashrc (see README Section 7):
+        export TURTLEBOT_BASE=kobuki
+        export TURTLEBOT_STACKS=hexagons
+        export TURTLEBOT_3D_SENSOR=kinect
+        export TURTLEBOT_SERIAL_PORT=/dev/kobuki
+
+  After launch:
+    - Use RViz "2D Pose Estimate" to place the robot on the map.
+    - delivery.launch can then be started in a second terminal.
+-->
+<launch>
+  <arg name="map_file" default="$(find turtlebot2_delivery)/maps/hospital.yaml"/>
+
+  <!-- ── Kobuki base ──────────────────────────────────────────── -->
+  <include file="$(find turtlebot_bringup)/launch/minimal.launch"/>
+
+  <!-- ── Kinect via openni_launch + depthimage_to_laserscan ───── -->
+  <include file="$(find turtlebot_bringup)/launch/3dsensor.launch">
+    <arg name="3d_sensor"  value="kinect"/>
+    <arg name="publish_tf" value="false"/>
+  </include>
+
+  <!-- ── Static map server ────────────────────────────────────── -->
+  <node pkg="map_server" type="map_server" name="map_server"
+        args="$(arg map_file)"/>
+
+  <!-- ── AMCL localisation ────────────────────────────────────── -->
+  <!--
+    AMCL matches the /scan laser data against the static map to
+    estimate the robot's position. After launch, click "2D Pose
+    Estimate" in RViz and click on the robot's starting position.
+  -->
+  <node pkg="amcl" type="amcl" name="amcl" output="screen">
+    <param name="use_map_topic"   value="true"/>
+    <param name="odom_model_type" value="diff"/>
+    <param name="base_frame_id"   value="base_footprint"/>
+    <param name="global_frame_id" value="map"/>
+    <param name="odom_frame_id"   value="odom"/>
+    <!-- Initial pose – robot starts at the base (0,0) -->
+    <param name="initial_pose_x"  value="0.0"/>
+    <param name="initial_pose_y"  value="0.0"/>
+    <param name="initial_pose_a"  value="0.0"/>
+    <param name="min_particles"   value="500"/>
+    <param name="max_particles"   value="2000"/>
+    <param name="update_min_d"    value="0.1"/>
+    <param name="update_min_a"    value="0.1"/>
+    <param name="transform_publish_period" value="0.05"/>
+    <param name="laser_max_beams" value="30"/>
+    <!-- Match Kinect's effective range -->
+    <param name="laser_max_range" value="4.5"/>
+    <param name="laser_min_range" value="0.45"/>
+  </node>
+
+  <!-- ── move_base (path planning + obstacle avoidance) ────────── -->
+  <!--
+    move_base uses:
+      - NavfnROS for global path planning on the static map
+      - DWAPlannerROS for local trajectory + real-time obstacle avoidance
+      - The Kinect /scan feed in the local costmap for live obstacle detection
+  -->
+  <node pkg="move_base" type="move_base" name="move_base" output="screen">
+    <remap from="cmd_vel" to="/cmd_vel_mux/input/navi"/>
+    <rosparam file="$(find turtlebot2_delivery)/config/costmap_params.yaml"
+              command="load"/>
+    <rosparam file="$(find turtlebot2_delivery)/config/move_base_params.yaml"
+              command="load"/>
+    <param name="base_global_planner" value="navfn/NavfnROS"/>
+    <param name="base_local_planner"  value="dwa_local_planner/DWAPlannerROS"/>
+  </node>
+
+  <!-- ── RViz ─────────────────────────────────────────────────── -->
+  <node pkg="rviz" type="rviz" name="rviz"
+        args="-d $(find turtlebot_rviz_launchers)/rviz/navigation.rviz"
+        required="false"/>
+
+</launch>

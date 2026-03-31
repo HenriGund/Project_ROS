@@ -1,0 +1,90 @@
+<!--
+  slam.launch
+  Phase 1 – Mapping the hospital floor with the Kinect.
+
+  Requires (already sourced in ~/.bashrc after the tutorial):
+    source ~/kobuki_ws/devel/setup.bash
+    source ~/turtlebot2_ws/devel/setup.bash
+    source ~/PROJECT_ROS/devel/setup.bash
+
+  Required environment variables (add to ~/.bashrc – see README Section 7):
+    export TURTLEBOT_BASE=kobuki
+    export TURTLEBOT_STACKS=hexagons
+    export TURTLEBOT_3D_SENSOR=kinect
+    export TURTLEBOT_SERIAL_PORT=/dev/kobuki   (or /dev/ttyUSB0)
+
+  Steps:
+    1. roslaunch turtlebot2_delivery slam.launch
+    2. Drive the robot slowly to cover the full hospital floor.
+       Rotate 360° at every corridor junction – the Kinect only sees ~57°.
+    3. When done, save the map:
+         rosrun map_server map_saver -f $(rospack find turtlebot2_delivery)/maps/hospital
+    4. Proceed to navigation.launch.
+-->
+<launch>
+
+  <!-- ── Kobuki base ──────────────────────────────────────────── -->
+  <include file="$(find turtlebot_bringup)/launch/minimal.launch"/>
+
+  <!-- ── Kinect via openni_launch + depthimage_to_laserscan ───── -->
+  <include file="$(find turtlebot_bringup)/launch/3dsensor.launch">
+    <arg name="3d_sensor"  value="kinect"/>
+    <arg name="publish_tf" value="false"/>
+  </include>
+
+  <!--
+    Override depthimage_to_laserscan defaults for better obstacle detection.
+    scan_height: use 30 pixel rows instead of 10 → detects box at more angles.
+    range_min:   0.30 m instead of 0.45 m → box doesn't disappear when close.
+  -->
+  <param name="/depthimage_to_laserscan/scan_height" value="30"/>
+  <param name="/depthimage_to_laserscan/range_min"   value="0.30"/>
+
+  <!-- ── gmapping SLAM ────────────────────────────────────────── -->
+  <node pkg="gmapping" type="slam_gmapping" name="slam_gmapping" output="screen">
+    <param name="base_frame"          value="base_footprint"/>
+    <param name="odom_frame"          value="odom"/>
+    <param name="map_frame"           value="map"/>
+    <remap from="scan"                to="/scan"/>
+    <!-- Small arena (~3x3m): limit range to avoid seeing through thin walls -->
+    <param name="maxUrange"           value="3.5"/>
+    <param name="maxRange"            value="4.0"/>
+    <param name="delta"               value="0.05"/>
+    <!-- More particles for better localisation in a small repetitive environment -->
+    <param name="particles"           value="200"/>
+    <!-- Update very frequently to capture detail with narrow 57° FOV -->
+    <param name="linearUpdate"        value="0.05"/>
+    <param name="angularUpdate"       value="0.05"/>
+    <param name="temporalUpdate"      value="1.0"/>
+    <param name="map_update_interval" value="0.5"/>  <!-- update map faster -->
+    <!-- Better scan matching for short-range environment -->
+    <param name="sigma"               value="0.05"/>
+    <param name="kernelSize"          value="1"/>
+    <param name="lstep"               value="0.05"/>
+    <param name="astep"               value="0.05"/>
+    <param name="iterations"          value="5"/>
+    <param name="lsigma"              value="0.075"/>
+    <param name="ogain"               value="3.0"/>
+    <param name="lskip"               value="0"/>
+    <param name="minimumScore"        value="0"/>   <!-- accept all scans, build map aggressively -->
+  </node>
+
+  <!-- ── Keyboard teleoperation (turtlebot_teleop) ────────────── -->
+  <!--
+    Standard TurtleBot2 teleop node – same one used in the tutorial:
+      roslaunch turtlebot_teleop keyboard_teleop.launch
+    Keys: i=forward  ,=backward  j=rotate-left  l=rotate-right  k=stop
+  -->
+  <node pkg="turtlebot_teleop" type="turtlebot_teleop_key"
+        name="turtlebot_teleop_key" output="screen">
+    <param name="scale_linear"  value="0.08"/>  <!-- very slow – better scan matching -->
+    <param name="scale_angular" value="0.5"/>
+    <remap from="turtlebot_teleop/cmd_vel" to="/cmd_vel_mux/input/teleop"/>
+  </node>
+
+  <!-- ── RViz ─────────────────────────────────────────────────── -->
+  <node pkg="rviz" type="rviz" name="rviz"
+        args="-d $(find turtlebot_rviz_launchers)/rviz/navigation.rviz"
+        required="false"/>
+
+</launch>
