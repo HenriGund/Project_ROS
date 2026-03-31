@@ -41,29 +41,28 @@ Nurse types request in terminal
         v
 Robot leaves base --> navigates to stock room
         |
-        v  (text alert: "please place the box on the tray")
+        v  (terminal prompt: "Press ENTER to send the robot to the ward")
 Robot waits at stock room
         |
-        v  (Kinect RGB camera detects box placed on tray)
+        v  (operator presses ENTER)
 Robot navigates to ward
         |
-        v  (text alert: "medication arrived, please remove the box")
+        v  (terminal prompt: "Press ENTER to send the robot back to base")
 Robot waits at ward
         |
-        v  (Kinect RGB camera detects box removed from tray)
+        v  (operator presses ENTER)
 Robot returns to base
 ```
 
 ### Key design decision
 
-The **Kinect v1** does double duty:
+The **Kinect v1** depth stream is converted to `/scan` by `depthimage_to_laserscan`
+for SLAM and obstacle avoidance. No separate LiDAR needed.
 
-- **Depth image** --> converted to `/scan` by `depthimage_to_laserscan` for SLAM and
-  obstacle avoidance. No separate LiDAR needed.
-- **RGB image** --> OpenCV colour-blob detection confirms the box is on the tray.
-  No RFID, no pressure sensor needed.
+Box handover at the stock room and at the ward is confirmed by the operator pressing
+**ENTER** on the terminal. No camera detection, no RFID, no pressure sensor.
 
-Alerts are **software-only** (text on the nurse terminal). No Arduino, no buzzer,
+Alerts are **software-only** (text on the operator terminal). No Arduino, no buzzer,
 no extra wiring.
 
 ---
@@ -71,30 +70,36 @@ no extra wiring.
 ## 2. System Architecture
 
 ```
-  Nurse terminal (hmi_interface)
+  Operator terminal (hmi_interface)
        |  /delivery_request
+       |  /load_status
        v
-  mission_manager  <---  /load_status  <---  load_detector
-       |                                           ^
-       | /alert_cmd                                | /camera/rgb/image_raw
-       v                                           |
-  alert_node                              KINECT v1 (openni_launch)
-       |  /mission_alert                           |
-       v                                           | /camera/depth_registered/image_raw
-  hmi_interface (displays alert)                   v
-                                         depthimage_to_laserscan
-                                                   |
-                                                   | /scan
-                                                   v
-                                         amcl + move_base
-                                                   |
-                                                   | /cmd_vel
-                                                   v
-                                            Kobuki base
-                                                   |
-                                                   | /odom
-                                                   v
-                                            mission_manager
+  mission_manager
+       |
+       | /alert_cmd
+       v
+  alert_node
+       |  /mission_alert
+       v
+  hmi_interface (displays alert)
+
+  KINECT v1 (openni_launch)
+       |
+       | /camera/depth_registered/image_raw
+       v
+  depthimage_to_laserscan
+       |
+       | /scan
+       v
+  amcl + move_base
+       |
+       | /cmd_vel
+       v
+  Kobuki base
+       |
+       | /odom
+       v
+  mission_manager
 ```
 
 ---
@@ -104,10 +109,9 @@ no extra wiring.
 | Sensor | Role | ROS topic |
 |--------|------|-----------|
 | Kinect v1 depth | SLAM + obstacle avoidance (fake /scan) | `/camera/depth_registered/image_raw` |
-| Kinect v1 RGB | Box presence detection on the tray | `/camera/rgb/image_raw` |
 | Kobuki wheel encoders | Odometry (built-in, no wiring) | `/odom` |
 
-> No LiDAR. No Arduino. No buzzer. No IR sensors. One Kinect handles everything.
+> No LiDAR. No Arduino. No buzzer. No IR sensors. Kinect depth handles navigation.
 
 ### Kinect limitations
 
@@ -135,8 +139,7 @@ PROJECT_ROS/                           <-- catkin workspace root
         delivery.launch      Phase 3 - full mission bringup
       src/
         mission_manager.py   Central state machine
-        load_detector.py     OpenCV box detection --> /load_status
-        hmi_interface.py     Nurse terminal keyboard interface
+        hmi_interface.py     Operator terminal keyboard interface
         alert_node.py        Text alerts --> /mission_alert
       config/
         waypoints.yaml       base / stock_room / ward poses
@@ -154,16 +157,14 @@ PROJECT_ROS/                           <-- catkin workspace root
 | Topic | Type | Publisher | Subscriber(s) |
 |-------|------|-----------|---------------|
 | `/delivery_request` | std_msgs/String | hmi_interface | mission_manager |
-| `/mission_state` | std_msgs/String | mission_manager | hmi_interface, load_detector |
-| `/load_status` | std_msgs/Bool | load_detector | mission_manager |
+| `/mission_state` | std_msgs/String | mission_manager | hmi_interface |
+| `/load_status` | std_msgs/Bool | hmi_interface | mission_manager |
 | `/alert_cmd` | std_msgs/String | mission_manager | alert_node |
 | `/mission_alert` | std_msgs/String | alert_node | hmi_interface |
-| `/camera/rgb/image_raw` | sensor_msgs/Image | openni_launch | load_detector |
 | `/camera/depth_registered/image_raw` | sensor_msgs/Image | openni_launch | depthimage_to_laserscan |
 | `/scan` | sensor_msgs/LaserScan | depthimage_to_laserscan | gmapping / amcl / move_base |
 | `/odom` | nav_msgs/Odometry | Kobuki base | move_base, gmapping |
 | `/cmd_vel` | geometry_msgs/Twist | move_base | Kobuki base |
-| `/load_detector/debug_image` | sensor_msgs/Image | load_detector | RViz (optional) |
 
 ---
 
@@ -175,9 +176,9 @@ States: IDLE --> TO_STOCK --> WAITING_LOAD --> TO_WARD --> DELIVERING --> RETURN
 IDLE
   |-- /delivery_request received --> TO_STOCK
         |-- arrived at stock room --> WAITING_LOAD
-              |-- /load_status = True (box detected) --> TO_WARD
+              |-- /load_status = True (operator pressed ENTER) --> TO_WARD
                     |-- arrived at ward --> DELIVERING
-                          |-- /load_status = False (box removed) --> RETURNING
+                          |-- /load_status = False (operator pressed ENTER) --> RETURNING
                                 |-- arrived at base --> IDLE
 ```
 
@@ -220,9 +221,6 @@ sudo apt install \
   ros-noetic-costmap-2d \
   ros-noetic-openni-launch \
   ros-noetic-depthimage-to-laserscan \
-  ros-noetic-cv-bridge \
-  ros-noetic-image-transport \
-  python3-opencv \
   python3-yaml
 ```
 
@@ -247,6 +245,10 @@ export TURTLEBOT_BASE=kobuki
 export TURTLEBOT_STACKS=hexagons
 export TURTLEBOT_3D_SENSOR=kinect
 export TURTLEBOT_SERIAL_PORT=/dev/kobuki   # udev symlink (see Section 8)
+
+# ROS network – single computer connected to the robot via USB
+export ROS_MASTER_URI=http://localhost:11311
+export ROS_IP=127.0.0.1
 ```
 
 Reload:
@@ -327,23 +329,9 @@ sudo usermod -aG dialout $USER
 # Log out and back in
 ```
 
-### 8.3 ROS network (two-machine setup)
+### 8.3 ROS network
 
-On the **robot PC** (the ROS master), add to `~/.bashrc`:
-
-```bash
-export ROS_MASTER_URI=http://192.168.1.10:11311   # robot PC IP
-export ROS_IP=192.168.1.10
-```
-
-On the **operator laptop**, add to `~/.bashrc`:
-
-```bash
-export ROS_MASTER_URI=http://192.168.1.10:11311   # same robot IP
-export ROS_IP=192.168.1.20                         # this laptop's IP
-```
-
-Single-machine (no network):
+The computer is connected directly to the robot via USB. Add to `~/.bashrc`:
 
 ```bash
 export ROS_MASTER_URI=http://localhost:11311
@@ -364,10 +352,7 @@ rostopic hz /camera/depth_registered/image_raw   # expect ~30 Hz
 # 3. Fake laser scan
 rostopic hz /scan                                 # expect ~30 Hz
 
-# 4. Kinect RGB stream
-rostopic hz /camera/rgb/image_raw                 # expect ~30 Hz
-
-# 5. Kobuki odometry
+# 4. Kobuki odometry
 rostopic echo /odom -n 1
 ```
 
@@ -453,49 +438,7 @@ waypoints:
 
 ---
 
-### Phase 3 - Tune camera colour detection
-
-The load_detector identifies the medication box by its colour in HSV.
-
-Run a live HSV tuner while looking at the box on the tray:
-
-```bash
-python3 - <<'EOF'
-import cv2, numpy as np
-cap = cv2.VideoCapture(0)
-def nothing(x): pass
-cv2.namedWindow('HSV Tuner')
-for n, v in [('H_lo',100),('H_hi',130),('S_lo',80),('S_hi',255),('V_lo',50),('V_hi',255)]:
-    cv2.createTrackbar(n, 'HSV Tuner', v, 255, nothing)
-while True:
-    ret, frame = cap.read()
-    if not ret: break
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    lo = np.array([cv2.getTrackbarPos(n,'HSV Tuner') for n in ('H_lo','S_lo','V_lo')])
-    hi = np.array([cv2.getTrackbarPos(n,'HSV Tuner') for n in ('H_hi','S_hi','V_hi')])
-    cv2.imshow('HSV Tuner', cv2.bitwise_and(frame, frame, mask=cv2.inRange(hsv, lo, hi)))
-    if cv2.waitKey(1) == 27: break
-cap.release(); cv2.destroyAllWindows()
-EOF
-```
-
-Update `src/load_detector.py` with your values:
-
-```python
-HSV_LOWER = np.array([100,  80,  50], dtype=np.uint8)   # replace
-HSV_UPPER = np.array([130, 255, 255], dtype=np.uint8)   # replace
-PIXEL_THRESHOLD = 3000                                   # tune for your camera distance
-```
-
-Check the detection live (while delivery.launch is running):
-
-```bash
-rosrun image_view image_view image:=/load_detector/debug_image
-```
-
----
-
-### Phase 4 - Run the full mission
+### Phase 3 - Run the full mission
 
 Two terminals needed.
 
@@ -519,36 +462,48 @@ source ~/.bashrc
 roslaunch turtlebot2_delivery delivery.launch
 ```
 
-An xterm window opens as the nurse terminal. The Kinect is already streaming
-from Terminal 1 - delivery.launch does NOT restart the Kinect.
+An xterm window opens as the operator terminal.
 
-**Nurse terminal example session:**
+**Operator terminal example session:**
 
 ```
+========================================================
+  TurtleBot2 Medication Delivery – Operator Terminal
+========================================================
 --------------------------------------------------------
-  TurtleBot2 Medication Delivery - Nurse Terminal
---------------------------------------------------------
-[HMI] Enter delivery request: Paracetamol 500mg to Room 3
+[NURSE] Enter delivery request: Paracetamol 500mg to Room 3
 [HMI] Request sent: "Paracetamol 500mg to Room 3"
+[...] Waiting for robot to reach the stock room...
 
 [STATUS] Robot is heading to the stock room...
 
-========================================================
-[ALERT] Robot is at the STOCK ROOM. Please place the medication box on the tray.
-========================================================
-    <-- place the box on the tray -->
-    (Kinect RGB detects the box automatically - no button to press)
-
-[STATUS] Robot is delivering medication to the ward...
+[STATUS] Robot is at the stock room.
 
 ========================================================
-[ALERT] Robot is at the WARD. Please remove the medication box from the tray.
+[STOCK ROOM] Robot has arrived and is waiting.
+  Place the medication box on the tray.
+  Press ENTER when the box is on the tray:
+[STOCK ROOM] Box loaded – robot heading to the ward.
+[...] Waiting for robot to reach the ward...
+
+[STATUS] Robot is delivering to the ward...
+
+[STATUS] Robot is at the ward.
+
 ========================================================
-    <-- remove the box from the tray -->
-    (Kinect RGB detects the absence automatically)
+[WARD] Robot has arrived with the medication.
+  Remove the medication box from the tray.
+  Press ENTER when the box has been removed:
+[WARD] Box removed – robot returning to base.
+[...] Waiting for robot to return...
 
 [STATUS] Robot is returning to base...
-[STATUS] Robot is at base - ready for a new request.
+
+[STATUS] Robot is at base – ready for a new request.
+
+========================================================
+[DONE] Mission complete! Ready for the next delivery.
+========================================================
 ```
 
 ---
@@ -586,16 +541,6 @@ to read values after driving to each location.
 | `yaw_goal_tolerance` | 0.15 rad | Acceptable angle error at goal (~8 deg) |
 | `sim_time` | 1.5 s | DWA trajectory simulation horizon |
 
-### src/load_detector.py
-
-| Constant | Default | Description |
-|----------|---------|-------------|
-| `IMAGE_TOPIC` | `/camera/rgb/image_raw` | Kinect RGB topic from openni_launch |
-| `HSV_LOWER` | `[100, 80, 50]` | Lower HSV bound for box colour |
-| `HSV_UPPER` | `[130, 255, 255]` | Upper HSV bound for box colour |
-| `PIXEL_THRESHOLD` | 3000 | Min coloured pixels to confirm box present |
-| `ACTIVE_STATES` | `WAITING_LOAD, DELIVERING` | States in which detection runs (saves CPU) |
-
 ---
 
 ## 11. Troubleshooting
@@ -610,6 +555,4 @@ to read values after driving to each location.
 | AMCL does not converge (robot lost on map) | Initial pose not set | Use "2D Pose Estimate" in RViz; drive the robot 0.5 m to gather scan data |
 | Robot navigates but grazes walls | Inflation radius too small | Increase `inflation_radius` in costmap_params.yaml to 0.40 |
 | `camera_depth_frame` TF missing | openni_launch publish_tf conflict | Ensure `publish_tf:=false` in 3dsensor include inside navigation.launch |
-| Box never detected | HSV range does not match box colour | Re-run HSV tuner (Phase 3); check `/load_detector/debug_image` in RViz |
-| Box always detected | PIXEL_THRESHOLD too low or bright ambient light | Increase `PIXEL_THRESHOLD`; cover the tray from direct light |
 | `catkin_make` fails with missing dependency | Wrong build order | Source kobuki_ws and turtlebot2_ws before running catkin_make in PROJECT_ROS |
